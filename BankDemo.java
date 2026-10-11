@@ -41,35 +41,88 @@ class Account {
 
 }
 
+//joint account class
+class JointAccount {
+    private double balance;
+
+    public JointAccount(double initialBalance) {
+        this.balance = initialBalance;
+    }
+
+    //deposit
+    public synchronized void deposit(double amount) {
+        balance += amount;
+    }
+
+    //withdraw
+    public synchronized void withdraw(double amount) throws InsufficientBalanceException {
+        if (amount > balance) {
+            throw new InsufficientBalanceException(amount, balance);
+        }
+        balance -= amount;
+    }
+
+    //balance
+    public synchronized double getBalance() {
+        return balance;
+    }
+}
 
 
 //runnable
-class BankTask implements Runnable {
-    private final Account account;
+class UserTask implements Runnable {
+    private final JointAccount jointAccount;
     private final Random random = new Random();
 
-    public BankTask(Account account) {
-        this.account = account;
+    public UserTask(JointAccount jointAccount) {
+        this.jointAccount = jointAccount;
     }
 
     @Override
     public void run() {
         String name = Thread.currentThread().getName();
-        double amount = Math.round(random.nextDouble() * 500 * 100) / 100.0; //generating values
-        if (random.nextBoolean()) {
-            account.deposit(amount);
-            System.out.printf("%s deposited Rs.%.2f%n", name, amount);
-        } else {
+        for (int i = 0; i < 5; i++) {
+            double amount = Math.round(random.nextDouble() * 100 * 100) / 100.0; // Rs.0 to Rs.100
+            if (random.nextBoolean()) {
+                jointAccount.deposit(amount);
+                System.out.printf("%s deposited Rs.%.2f%n", name, amount);
+            } else {
+                try {
+                    jointAccount.withdraw(amount);
+                    System.out.printf("%s withdrew Rs.%.2f%n", name, amount);
+                } catch (InsufficientBalanceException e) {
+                    System.out.println(name + "ERROR! " + e.getMessage());
+                }
+            }
             try {
-                account.withdraw(amount);
-                System.out.printf("%s withdrew Rs.%.2f%n", name, amount);
-            } catch (InsufficientBalanceException e) {
-                System.out.println(name + " Failed: " + e.getMessage());
+                Thread.sleep(random.nextInt(50)); // let threads interleave
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             }
         }
     }
 }
 
+//joint account demo class
+class JointAccountDemo {
+    public static void main(String[] args) throws InterruptedException {
+        JointAccount account = new JointAccount(1000);
+
+        Thread t1 = new Thread(new UserTask(account), "User_1");
+        Thread t2 = new Thread(new UserTask(account), "User_2");
+        Thread t3 = new Thread(new UserTask(account), "User_3");
+
+        t1.start();
+        t2.start();
+        t3.start();
+        t1.join();
+        t2.join();
+        t3.join();
+
+        System.out.printf("Final balance: Rs.%.2f%n", account.getBalance());
+    }
+}
 
 
 public class BankDemo {
