@@ -1,4 +1,5 @@
 import java.util.Scanner;
+import java.util.Random;
 
 //withdrawal amount as a parameter
 class InsufficientBalanceException extends Exception {
@@ -9,7 +10,7 @@ class InsufficientBalanceException extends Exception {
 
 
 
-//account class
+//account class with synchronization for thread safety
 class Account {
        private final int accountNumber;
        private double balance;
@@ -17,24 +18,23 @@ class Account {
        public Account(int accountNumber, double initialBalance) {
               this.accountNumber = accountNumber;
               this.balance = initialBalance;
-       } 
-
-       public int getAccountNumber() {
-              return accountNumber;
-       }
-       public void displayBalance() {
-              System.out.println("Balance: Rs." + balance);
        }
 
-       //deposit
-       public void deposit(double amount) {
+       public synchronized double getBalance() {
+              return balance;
+       }
+
+       public synchronized void displayBalance() {
+              System.out.printf("Balance: Rs.%.2f%n", balance);
+       }
+
+       public synchronized void deposit(double amount) {
               balance += amount;
        }
 
-       //withdraw
-       public void withdraw(double amount) throws InsufficientBalanceException {
-              if(amount > balance ) {
-                throw new InsufficientBalanceException(amount, balance);
+       public synchronized void withdraw(double amount) throws InsufficientBalanceException {
+              if (amount > balance) {
+                 throw new InsufficientBalanceException(amount, balance);
               }
               balance -= amount;
        }
@@ -42,25 +42,97 @@ class Account {
 }
 
 
+
+//runnable
+class BankTask implements Runnable {
+    private final Account account;
+    private final Random random = new Random();
+
+    public BankTask(Account account) {
+        this.account = account;
+    }
+
+    @Override
+    public void run() {
+        String name = Thread.currentThread().getName();
+        double amount = Math.round(random.nextDouble() * 500 * 100) / 100.0; //generating values
+        if (random.nextBoolean()) {
+            account.deposit(amount);
+            System.out.printf("%s deposited Rs.%.2f%n", name, amount);
+        } else {
+            try {
+                account.withdraw(amount);
+                System.out.printf("%s withdrew Rs.%.2f%n", name, amount);
+            } catch (InsufficientBalanceException e) {
+                System.out.println(name + " Failed: " + e.getMessage());
+            }
+        }
+    }
+}
+
+
+
 public class BankDemo {
+    private static final Scanner in = new Scanner(System.in);
+
+    //withdrawal attempt
+    private static boolean attemptWithdrawal(Account account, double amount){
+            try {
+                account.withdraw(amount);
+                System.out.println("Withdrawal Successful~");
+                return true;
+            } catch (InsufficientBalanceException e){
+                System.out.println("ERROR!! " + e.getMessage());
+                return false;
+            } finally {
+                account.displayBalance();
+            }
+    }
+
+    //asking permission
+    private static boolean askToContinue() {
+            System.out.print("Do you wish to continue? (yes/no): ");
+            return in.next().equalsIgnoreCase("yes");  //ignoring if yes
+    }
+
+
+    //main
     public static void main(String[] args) {
         Account account = new Account(12345, 1000);
+        Thread[] threads = new Thread[3];
         Scanner in = new Scanner(System.in);
 
-        System.out.println("Account Number: " + account.getAccountNumber());
-        System.out.print("Initial ");
-        account.displayBalance();
-        System.out.print("Enter deposit amount: Rs.");
-        account.deposit(in.nextDouble());
-        account.displayBalance();
-
-        System.out.print("Enter withdrawal amount: Rs.");
-
-        try {
-            account.withdraw(in.nextDouble());
-            account.displayBalance();
-        } catch (InsufficientBalanceException e) {
-            System.out.println("Error: " + e.getMessage());
+        //picking user
+        for(int i = 0; i < threads.length; i++){
+           threads[i] = new Thread(new BankTask(account), "User_" + (i + 1));
+           threads[i].start();
         }
+
+        for( Thread t : threads) {
+           try{
+              t.join();
+           } catch (InterruptedException e){
+                   System.out.println("Thread was interrupted! " + e.getMessage());
+           }
+        }
+
+        boolean keepGoing = true;
+        while (keepGoing) {
+              System.out.print("Enter withdrawal amount : Rs.");
+              double amount = in.nextDouble();
+              boolean success = false;
+              try {
+                  success = attemptWithdrawal(account, amount);
+              } finally {
+                  keepGoing = askToContinue();
+              }
+              if(keepGoing && success) {
+                account.deposit(amount);
+                System.out.println("Money was deposited back into the account...");
+                account.displayBalance();
+              }
+        }
+
+        System.out.println("Thank you for banking with us~");
     }
 }
